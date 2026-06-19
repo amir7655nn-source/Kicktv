@@ -39,7 +39,7 @@ jobs:
         run: chmod +x android/gradlew
 
       - name: Build Debug APK
-        run: cd android && ./gradlew assembleDebug --no-daemon
+        run: cd android && ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | grep -A5 "FAILURE\|What went wrong\|Exception"
         env:
           ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
 
