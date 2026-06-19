@@ -10,21 +10,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+
       - uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
+
       - uses: android-actions/setup-android@v3
-      - run: npm install --legacy-peer-deps
-      - run: chmod +x android/gradlew
-      - run: cd android && ./gradlew assembleRelease --no-daemon
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: Build Release APK
+        run: |
+          cd android
+          ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tail -100
         env:
           ANDROID_HOME: ${{ env.ANDROID_SDK_ROOT }}
+
       - uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: KickTV-APK
           path: android/app/build/outputs/apk/release/app-release.apk
