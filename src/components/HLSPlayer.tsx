@@ -1,7 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-// @ts-ignore
-import Video from 'react-native-video';
+import { WebView } from 'react-native-webview';
 
 interface Props {
   url: string;
@@ -10,62 +9,53 @@ interface Props {
 }
 
 export default function HLSPlayer({ url, isFullscreen, onToggleFullscreen }: Props) {
-  const [paused, setPaused] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [controls, setControls] = useState(true);
-  const timer = useRef<any>(null);
 
-  const showControls = () => {
-    setControls(true);
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => setControls(false), 3000);
-  };
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <style>
+        * { margin:0; padding:0; background:#000; }
+        video { width:100vw; height:100vh; object-fit:contain; }
+      </style>
+      <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    </head>
+    <body>
+      <video id="video" autoplay playsinline controls></video>
+      <script>
+        var video = document.getElementById('video');
+        if (Hls.isSupported()) {
+          var hls = new Hls();
+          hls.loadSource('${url}');
+          hls.attachMedia(video);
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = '${url}';
+        }
+      </script>
+    </body>
+    </html>
+  `;
 
   return (
     <View style={s.wrap}>
-      <Video
-        source={{ uri: url }}
-        style={StyleSheet.absoluteFill}
-        paused={paused}
-        resizeMode="contain"
-        onLoad={() => { setLoading(false); showControls(); }}
-        onError={() => { setLoading(false); setError(true); }}
-        onBuffer={({ isBuffering }: any) => setLoading(isBuffering)}
+      <WebView
+        source={{ html }}
+        style={s.webview}
+        onLoadStart={() => setLoading(true)}
+        onLoad={() => setLoading(false)}
+        allowsInlineMediaPlayback
+        mediaPlaybackRequiresUserAction={false}
+        javaScriptEnabled
       />
-
       {loading && (
         <View style={s.overlay}>
           <ActivityIndicator color="#53fc18" size="large" />
         </View>
       )}
-      {error && (
-        <View style={s.overlay}>
-          <Text style={s.errorText}>Failed to load stream</Text>
-        </View>
-      )}
-
-      <TouchableOpacity
-        style={StyleSheet.absoluteFill}
-        activeOpacity={1}
-        onPress={() => { if (controls) setControls(false); else showControls(); }}
-      >
-        {controls && !loading && !error && (
-          <View style={s.controls}>
-            <View style={s.topLeft}>
-              <View style={s.liveBadge}>
-                <View style={s.liveDot} />
-                <Text style={s.liveText}>LIVE</Text>
-              </View>
-            </View>
-            <TouchableOpacity style={s.playBtn} onPress={() => setPaused(v => !v)}>
-              <Text style={s.playIcon}>{paused ? '▶' : '⏸'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={s.fsBtn} onPress={onToggleFullscreen}>
-              <Text style={s.fsIcon}>{isFullscreen ? '⊡' : '⛶'}</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+      <TouchableOpacity style={s.fsBtn} onPress={onToggleFullscreen}>
+        <Text style={s.fsIcon}>{isFullscreen ? '⊡' : '⛶'}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -73,27 +63,15 @@ export default function HLSPlayer({ url, isFullscreen, onToggleFullscreen }: Pro
 
 const s = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: '#000' },
+  webview: { flex: 1, backgroundColor: '#000' },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
-  errorText: { color: '#ff5555', fontSize: 14 },
-  controls: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  topLeft: { position: 'absolute', top: 10, left: 10 },
-  liveBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 4,
-    paddingHorizontal: 8, paddingVertical: 4,
+  fsBtn: {
+    position: 'absolute', bottom: 10, right: 10,
+    padding: 8, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 6,
   },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#eb0400' },
-  liveText: { color: '#fff', fontSize: 10, fontWeight: '800' },
-  playBtn: {
-    width: 52, height: 52, borderRadius: 26,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  playIcon: { color: '#fff', fontSize: 20 },
-  fsBtn: { position: 'absolute', bottom: 10, right: 10, padding: 8 },
   fsIcon: { color: '#fff', fontSize: 18 },
 });
