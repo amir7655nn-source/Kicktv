@@ -1,94 +1,74 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import { View, StyleSheet, ActivityIndicator, Text } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import { useRoute } from '@react-navigation/native';
 import { WebView } from 'react-native-webview';
 
 export default function StreamScreen() {
   const route = useRoute<any>();
-  const navigation = useNavigation();
   const channel = route.params?.channel;
-  const slug = channel?.slug ?? route.params?.slug ?? '';
+  const slug = channel?.slug ?? '';
   const [loading, setLoading] = useState(true);
   const webviewRef = useRef<any>(null);
 
-  // اسکریپت inject برای 7TV
   const inject7TV = `
   (async function() {
-    // صبر میکنیم چت لود بشه
-    function waitForChat() {
-      return new Promise(resolve => {
-        const check = setInterval(() => {
-          const chatContainer = document.querySelector('[data-testid="chat-container"]') 
-            || document.querySelector('.chat-container')
-            || document.querySelector('[class*="chat"]');
-          if (chatContainer) { clearInterval(check); resolve(chatContainer); }
-        }, 1000);
-      });
-    }
+    const emoteMap = {};
 
-    // لود ایموت‌های 7TV
-    async function load7TVEmotes() {
-      const emoteMap = {};
+    async function loadEmotes() {
       try {
-        // global emotes
-        const global = await fetch('https://7tv.io/v3/emote-sets/global').then(r => r.json());
-        for (const e of global?.emotes ?? []) {
-          emoteMap[e.name] = 'https://cdn.7tv.app/emote/' + e.id + '/1x.webp';
-        }
-        // channel emotes
-        const channel = await fetch('https://7tv.io/v3/users/kick/${slug}').then(r => r.json());
-        for (const e of channel?.emote_set?.emotes ?? []) {
-          emoteMap[e.name] = 'https://cdn.7tv.app/emote/' + e.id + '/1x.webp';
-        }
+        const g = await fetch('https://7tv.io/v3/emote-sets/global').then(r=>r.json());
+        for (const e of g?.emotes ?? []) emoteMap[e.name] = 'https://cdn.7tv.app/emote/'+e.id+'/1x.webp';
       } catch(e) {}
-      return emoteMap;
+      try {
+        const c = await fetch('https://7tv.io/v3/users/kick/${slug}').then(r=>r.json());
+        for (const e of c?.emote_set?.emotes ?? []) emoteMap[e.name] = 'https://cdn.7tv.app/emote/'+e.id+'/1x.webp';
+      } catch(e) {}
+      console.log('7TV emotes loaded:', Object.keys(emoteMap).length);
     }
 
-    // replace متن ایموت با عکس
-    function replaceEmotes(element, emoteMap) {
-      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-      const nodes = [];
-      while (walker.nextNode()) nodes.push(walker.currentNode);
+    function processNode(node) {
+      if (!node || node._7tv) return;
+      const texts = [];
+      const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null);
+      let n;
+      while (n = walker.nextNode()) texts.push(n);
       
-      for (const node of nodes) {
-        const words = node.textContent.split(' ');
-        let changed = false;
+      for (const textNode of texts) {
+        const words = textNode.textContent.split(' ');
+        if (!words.some(w => emoteMap[w])) continue;
         const span = document.createElement('span');
-        
-        for (const word of words) {
-          if (emoteMap[word]) {
+        span._7tv = true;
+        for (let i = 0; i < words.length; i++) {
+          const w = words[i];
+          if (emoteMap[w]) {
             const img = document.createElement('img');
-            img.src = emoteMap[word];
-            img.style.cssText = 'width:24px;height:24px;vertical-align:middle;margin:0 2px;';
-            img.title = word;
+            img.src = emoteMap[w];
+            img.alt = w;
+            img.title = w;
+            img.style.cssText = 'width:22px;height:22px;vertical-align:middle;margin:0 1px;display:inline-block;';
             span.appendChild(img);
-            changed = true;
           } else {
-            span.appendChild(document.createTextNode(word + ' '));
+            span.appendChild(document.createTextNode((i > 0 ? ' ' : '') + w));
           }
         }
-        
-        if (changed && node.parentNode) {
-          node.parentNode.replaceChild(span, node);
-        }
+        if (textNode.parentNode) textNode.parentNode.replaceChild(span, textNode);
       }
     }
 
-    const emoteMap = await load7TVEmotes();
-    
-    // watch برای پیام‌های جدید
-    const observer = new MutationObserver((mutations) => {
+    await loadEmotes();
+
+    const observer = new MutationObserver(mutations => {
       for (const m of mutations) {
         for (const node of m.addedNodes) {
-          if (node.nodeType === 1) replaceEmotes(node, emoteMap);
+          if (node.nodeType === 1) processNode(node);
         }
       }
     });
 
-    const chat = await waitForChat();
-    observer.observe(chat, { childList: true, subtree: true });
+    observer.observe(document.body, { childList: true, subtree: true });
     
-    console.log('7TV loaded:', Object.keys(emoteMap).length, 'emotes');
+    // process existing messages
+    document.querySelectorAll('[data-chat-entry], [class*="message"], [class*="chat-entry"]').forEach(processNode);
   })();
   true;
   `;
@@ -107,7 +87,9 @@ export default function StreamScreen() {
         style={s.webview}
         onLoadEnd={() => {
           setLoading(false);
-          webviewRef.current?.injectJavaScript(inject7TV);
+          setTimeout(() => {
+            webviewRef.current?.injectJavaScript(inject7TV);
+          }, 2000);
         }}
         javaScriptEnabled
         domStorageEnabled
@@ -125,10 +107,8 @@ const s = StyleSheet.create({
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#0e0e0e',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    zIndex: 10,
+    alignItems: 'center', justifyContent: 'center',
+    gap: 12, zIndex: 10,
   },
   loadingText: { color: '#5a5a6e', fontSize: 14 },
 });
