@@ -1,46 +1,66 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, FlatList, ActivityIndicator, Image, Alert,
+  StyleSheet, ActivityIndicator, Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { kickApi, KickChannel } from '../api/kickApi';
+import { WebView } from 'react-native-webview';
 import { useAuth } from '../context/AuthContext';
-
-function SearchIcon() {
-  return <Text style={{ color: '#5a5a6e', fontSize: 15 }}>⌕</Text>;
-}
 
 export default function HomeScreen() {
   const navigation = useNavigation<any>();
   const { logout, user } = useAuth();
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  const [channel, setChannel] = useState<KickChannel | null>(null);
-  const [searched, setSearched] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const webviewRef = useRef<any>(null);
 
-  const search = async () => {
+  const search = () => {
     if (!query.trim()) return;
     setLoading(true);
-    setSearched(true);
-    setChannel(null);
+    setFetching(true);
+  };
+
+  const onMessage = (event: any) => {
     try {
-      const ch = await kickApi.getChannel(query.trim().toLowerCase());
-      setChannel(ch);
-    } catch {
-      Alert.alert('Not found', `Channel "${query}" does not exist.`);
-    } finally {
+      const data = JSON.parse(event.nativeEvent.data);
       setLoading(false);
+      setFetching(false);
+      if (data.error) {
+        Alert.alert('Not found', `Channel "${query}" does not exist.`);
+        return;
+      }
+      navigation.navigate('Stream', { channel: data });
+    } catch {
+      setLoading(false);
+      setFetching(false);
     }
   };
 
+  const injectedJS = `
+    fetch('https://kick.com/api/v2/channels/${query.trim().toLowerCase()}')
+      .then(r => r.json())
+      .then(d => window.ReactNativeWebView.postMessage(JSON.stringify(d)))
+      .catch(e => window.ReactNativeWebView.postMessage(JSON.stringify({error: true})));
+    true;
+  `;
+
   return (
     <View style={s.container}>
-      {/* Top bar */}
+      {fetching && (
+        <WebView
+          ref={webviewRef}
+          source={{ uri: 'https://kick.com' }}
+          injectedJavaScriptBeforeContentLoaded={injectedJS}
+          onMessage={onMessage}
+          style={{ width: 0, height: 0, opacity: 0 }}
+          javaScriptEnabled
+        />
+      )}
+
       <View style={s.topBar}>
         <Text style={s.logo}>kick</Text>
         <View style={s.searchWrap}>
-          <SearchIcon />
           <TextInput
             style={s.searchInput}
             placeholder="Search channels..."
@@ -54,79 +74,25 @@ export default function HomeScreen() {
         </View>
         <TouchableOpacity onPress={logout}>
           <View style={s.avatar}>
-            <Text style={s.avatarText}>{user?.username?.[0]?.toUpperCase() ?? 'U'}</Text>
+            <Text style={s.avatarText}>{user?.username?.[0]?.toUpperCase() ?? 'G'}</Text>
           </View>
         </TouchableOpacity>
       </View>
 
-      {/* Content */}
       <View style={s.content}>
-        {loading && (
+        {loading ? (
           <View style={s.center}>
             <ActivityIndicator color="#53fc18" size="large" />
             <Text style={s.loadingText}>Searching...</Text>
           </View>
-        )}
-
-        {!loading && channel && (
-          <TouchableOpacity
-            style={s.card}
-            onPress={() => navigation.navigate('Stream', { channel })}
-          >
-            {/* Thumbnail */}
-            <View style={s.thumbnail}>
-              <Text style={s.thumbEmoji}>🎮</Text>
-              {channel.livestream && (
-                <View style={s.liveBadge}>
-                  <Text style={s.liveText}>LIVE</Text>
-                </View>
-              )}
-            </View>
-            {/* Info */}
-            <View style={s.cardInfo}>
-              <View style={s.cardAvatarRow}>
-                <View style={s.cardAvatar}>
-                  <Text style={s.cardAvatarText}>
-                    {(channel.user?.username ?? channel.slug)[0].toUpperCase()}
-                  </Text>
-                </View>
-                <View>
-                  <Text style={s.channelName}>{channel.user?.username ?? channel.slug}</Text>
-                  <Text style={s.gameText}>{channel.livestream?.session_title ?? 'Offline'}</Text>
-                </View>
-              </View>
-              {channel.livestream ? (
-                <View style={s.viewerRow}>
-                  <View style={s.liveDot} />
-                  <Text style={s.liveGreen}>LIVE</Text>
-                  <Text style={s.viewers}>
-                    {channel.livestream.viewer_count?.toLocaleString()} viewers
-                  </Text>
-                </View>
-              ) : (
-                <Text style={s.offline}>Offline</Text>
-              )}
-            </View>
-          </TouchableOpacity>
-        )}
-
-        {!loading && !channel && !searched && (
+        ) : (
           <View style={s.center}>
             <Text style={s.hintEmoji}>📡</Text>
             <Text style={s.hint}>Search for a Kick channel</Text>
-            <Text style={s.hintSub}>Type a channel name above and press Search</Text>
-          </View>
-        )}
-
-        {!loading && searched && !channel && (
-          <View style={s.center}>
-            <Text style={s.hintEmoji}>🔍</Text>
-            <Text style={s.hint}>No channel found</Text>
           </View>
         )}
       </View>
 
-      {/* Bottom nav */}
       <View style={s.bottomNav}>
         {[
           { icon: '🏠', label: 'Home', active: true },
@@ -154,7 +120,7 @@ const s = StyleSheet.create({
   searchWrap: {
     flex: 1, flexDirection: 'row', alignItems: 'center',
     backgroundColor: '#1a1a1a', borderRadius: 20,
-    paddingHorizontal: 12, paddingVertical: 8, gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8,
     borderWidth: 1, borderColor: '#2a2a2a',
   },
   searchInput: { flex: 1, color: '#efeff1', fontSize: 13, padding: 0 },
@@ -168,35 +134,6 @@ const s = StyleSheet.create({
   loadingText: { color: '#5a5a6e', fontSize: 13, marginTop: 8 },
   hintEmoji: { fontSize: 40, marginBottom: 8 },
   hint: { color: '#efeff1', fontSize: 16, fontWeight: '600' },
-  hintSub: { color: '#5a5a6e', fontSize: 13, textAlign: 'center', marginTop: 4 },
-  card: {
-    backgroundColor: '#1a1a1a', borderRadius: 12,
-    overflow: 'hidden', borderWidth: 1, borderColor: '#2a2a2a',
-  },
-  thumbnail: {
-    height: 160, backgroundColor: '#111',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  thumbEmoji: { fontSize: 48 },
-  liveBadge: {
-    position: 'absolute', top: 8, left: 8,
-    backgroundColor: '#eb0400', borderRadius: 4, paddingHorizontal: 7, paddingVertical: 2,
-  },
-  liveText: { color: '#fff', fontSize: 10, fontWeight: '800' },
-  cardInfo: { padding: 12, gap: 8 },
-  cardAvatarRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  cardAvatar: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: '#53fc18', alignItems: 'center', justifyContent: 'center',
-  },
-  cardAvatarText: { color: '#0e0e0e', fontWeight: '800', fontSize: 16 },
-  channelName: { color: '#efeff1', fontWeight: '700', fontSize: 15 },
-  gameText: { color: '#adadb8', fontSize: 12, marginTop: 2 },
-  viewerRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#eb0400' },
-  liveGreen: { color: '#53fc18', fontSize: 11, fontWeight: '700' },
-  viewers: { color: '#adadb8', fontSize: 11 },
-  offline: { color: '#5a5a6e', fontSize: 12 },
   bottomNav: {
     flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#1a1a1a',
     backgroundColor: '#141414',
