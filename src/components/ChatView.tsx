@@ -1,6 +1,5 @@
 import React, { useRef, useEffect, memo, useCallback } from 'react';
-import { FlatList, View, Text, StyleSheet, ListRenderItemInfo } from 'react-native';
-import FastImage from 'react-native-fast-image';
+import { FlatList, View, Text, StyleSheet, ListRenderItemInfo, Image } from 'react-native';
 import { ChatMessage } from '../hooks/usePusherChat';
 import { EmoteMap } from '../hooks/useEmoteMap';
 
@@ -32,11 +31,11 @@ const ChatRow = memo(({ msg, emoteMap }: { msg: ChatMessage; emoteMap: EmoteMap 
       <Text style={s.colon}>: </Text>
       {tokens.map(tok =>
         tok.type === 'emote' ? (
-          <FastImage
+          <Image
             key={tok.key}
-            source={{ uri: tok.url, cache: FastImage.cacheControl.immutable }}
+            source={{ uri: tok.url }}
             style={s.emote}
-            resizeMode={FastImage.resizeMode.contain}
+            resizeMode="contain"
           />
         ) : (
           <Text key={tok.key} style={s.msgText}>{tok.tok} </Text>
@@ -68,7 +67,6 @@ export default function ChatView({ messages, emoteMap }: Props) {
 
   return (
     <>
-      {/* 7TV indicator */}
       <View style={s.emoteBadge}>
         <View style={s.purpleDot} />
         <Text style={s.emoteCount}>
@@ -86,7 +84,6 @@ export default function ChatView({ messages, emoteMap }: Props) {
         maxToRenderPerBatch={20}
         windowSize={10}
       />
-      {/* Chat input bar */}
       <View style={s.inputBar}>
         <View style={s.inputFake}>
           <Text style={s.inputPlaceholder}>Send a message...</Text>
@@ -114,7 +111,7 @@ const s = StyleSheet.create({
   username: { fontSize: 13, fontWeight: '700' },
   colon: { color: '#5a5a6e' },
   msgText: { color: '#efeff1', fontSize: 13, lineHeight: 20 },
-  emote: { width: 24, height: 24, marginHorizontal: 1 },
+  emote: { width: 28, height: 28, marginHorizontal: 2 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyText: { color: '#3a3a3a', fontSize: 14 },
   emoteBadge: {
