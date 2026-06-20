@@ -75,7 +75,7 @@ true;
         style={s.w}
         onLoadEnd={() => {
           setLoading(false);
-          setTimeout(() => webviewRef.current?.injectJavaScript(inject), 4000);
+          setTimeout(() => { webviewRef.current?.injectJavaScript(`alert("inject works!");true;`); }, 3000);
         }}
         javaScriptEnabled
         domStorageEnabled
@@ -93,3 +93,4 @@ const s = StyleSheet.create({
   o:{...StyleSheet.absoluteFillObject,backgroundColor:'#0e0e0e',alignItems:'center',justifyContent:'center',gap:12,zIndex:10},
   t:{color:'#5a5a6e',fontSize:14},
 });
+// debug
