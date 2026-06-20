@@ -5,91 +5,77 @@ import { WebView } from 'react-native-webview';
 
 export default function StreamScreen() {
   const route = useRoute<any>();
-  const channel = route.params?.channel;
-  const slug = channel?.slug ?? '';
+  const slug = route.params?.channel?.slug ?? '';
   const [loading, setLoading] = useState(true);
   const webviewRef = useRef<any>(null);
 
-  const inject7TV = `
-  (async function() {
-    const emoteMap = {};
+  const inject = `
+(async function() {
+  const map = {};
+  try {
+    const g = await fetch('https://7tv.io/v3/emote-sets/global').then(r=>r.json());
+    for (const e of g?.emotes??[]) map[e.name]='https://cdn.7tv.app/emote/'+e.id+'/1x.avif';
+  } catch(e){}
+  try {
+    const c = await fetch('https://7tv.io/v3/users/kick/${slug}').then(r=>r.json());
+    for (const e of c?.emote_set?.emotes??[]) map[e.name]='https://cdn.7tv.app/emote/'+e.id+'/1x.avif';
+  } catch(e){}
 
-    async function loadEmotes() {
-      try {
-        const g = await fetch('https://7tv.io/v3/emote-sets/global').then(r=>r.json());
-        for (const e of g?.emotes ?? []) emoteMap[e.name] = 'https://cdn.7tv.app/emote/'+e.id+'/1x.webp';
-      } catch(e) {}
-      try {
-        const c = await fetch('https://7tv.io/v3/users/kick/${slug}').then(r=>r.json());
-        for (const e of c?.emote_set?.emotes ?? []) emoteMap[e.name] = 'https://cdn.7tv.app/emote/'+e.id+'/1x.webp';
-      } catch(e) {}
-      console.log('7TV emotes loaded:', Object.keys(emoteMap).length);
-    }
-
-    function processNode(node) {
-      if (!node || node._7tv) return;
-      const texts = [];
-      const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null);
-      let n;
-      while (n = walker.nextNode()) texts.push(n);
-      
-      for (const textNode of texts) {
-        const words = textNode.textContent.split(' ');
-        if (!words.some(w => emoteMap[w])) continue;
-        const span = document.createElement('span');
-        span._7tv = true;
-        for (let i = 0; i < words.length; i++) {
-          const w = words[i];
-          if (emoteMap[w]) {
-            const img = document.createElement('img');
-            img.src = emoteMap[w];
-            img.alt = w;
-            img.title = w;
-            img.style.cssText = 'width:22px;height:22px;vertical-align:middle;margin:0 1px;display:inline-block;';
-            span.appendChild(img);
-          } else {
-            span.appendChild(document.createTextNode((i > 0 ? ' ' : '') + w));
-          }
+  function process(node) {
+    if (!node || node._7) return;
+    node._7 = 1;
+    const tw = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+    const ns = []; let n;
+    while(n=tw.nextNode()) ns.push(n);
+    for (const t of ns) {
+      if (!t.parentNode || t.parentNode._7) continue;
+      const ws = t.textContent.split(' ');
+      if (!ws.some(w=>map[w])) continue;
+      const s = document.createElement('span');
+      s._7 = 1;
+      ws.forEach((w,i) => {
+        if (i>0) s.appendChild(document.createTextNode(' '));
+        if (map[w]) {
+          const img = document.createElement('img');
+          img.src = map[w];
+          img.style.cssText = 'width:20px;height:20px;vertical-align:middle;';
+          img.title = w;
+          s.appendChild(img);
+        } else {
+          s.appendChild(document.createTextNode(w));
         }
-        if (textNode.parentNode) textNode.parentNode.replaceChild(span, textNode);
-      }
+      });
+      t.parentNode.replaceChild(s, t);
     }
+  }
 
-    await loadEmotes();
+  new MutationObserver(ms => {
+    for (const m of ms)
+      for (const n of m.addedNodes)
+        if (n.nodeType===1) process(n);
+  }).observe(document.body, {childList:true, subtree:true});
 
-    const observer = new MutationObserver(mutations => {
-      for (const m of mutations) {
-        for (const node of m.addedNodes) {
-          if (node.nodeType === 1) processNode(node);
-        }
-      }
-    });
-
-    observer.observe(document.body, { childList: true, subtree: true });
-    
-    // process existing messages
-    document.querySelectorAll('[data-chat-entry], [class*="message"], [class*="chat-entry"]').forEach(processNode);
-  })();
-  true;
+  // process existing
+  document.body.querySelectorAll('*').forEach(process);
+})();
+true;
   `;
 
   return (
-    <View style={s.container}>
+    <View style={s.c}>
       {loading && (
-        <View style={s.loadingOverlay}>
+        <View style={s.o}>
           <ActivityIndicator color="#53fc18" size="large" />
-          <Text style={s.loadingText}>Loading stream...</Text>
+          <Text style={s.t}>Loading...</Text>
         </View>
       )}
       <WebView
         ref={webviewRef}
         source={{ uri: `https://kick.com/${slug}` }}
-        style={s.webview}
+        style={s.w}
         onLoadEnd={() => {
           setLoading(false);
-          setTimeout(() => {
-            webviewRef.current?.injectJavaScript(inject7TV);
-          }, 2000);
+          setTimeout(() => webviewRef.current?.injectJavaScript(inject), 4000);
         }}
         javaScriptEnabled
         domStorageEnabled
@@ -102,13 +88,8 @@ export default function StreamScreen() {
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0e0e0e' },
-  webview: { flex: 1 },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#0e0e0e',
-    alignItems: 'center', justifyContent: 'center',
-    gap: 12, zIndex: 10,
-  },
-  loadingText: { color: '#5a5a6e', fontSize: 14 },
+  c:{flex:1,backgroundColor:'#0e0e0e'},
+  w:{flex:1},
+  o:{...StyleSheet.absoluteFillObject,backgroundColor:'#0e0e0e',alignItems:'center',justifyContent:'center',gap:12,zIndex:10},
+  t:{color:'#5a5a6e',fontSize:14},
 });
