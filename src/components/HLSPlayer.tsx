@@ -1,6 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
-import Video, { VideoRef } from 'react-native-video';
+import Video from 'react-native-video';
 
 interface Props {
   url: string;
@@ -9,12 +9,11 @@ interface Props {
 }
 
 export default function HLSPlayer({ url, isFullscreen, onToggleFullscreen }: Props) {
-  const videoRef = useRef<VideoRef>(null);
   const [paused, setPaused] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [controls, setControls] = useState(true);
-  const timer = useRef<any>(null);
+  const timer = React.useRef<any>(null);
 
   const showControls = () => {
     setControls(true);
@@ -25,14 +24,14 @@ export default function HLSPlayer({ url, isFullscreen, onToggleFullscreen }: Pro
   return (
     <View style={s.wrap}>
       <Video
-        ref={videoRef}
         source={{ uri: url }}
         style={StyleSheet.absoluteFill}
         paused={paused}
         resizeMode="contain"
         onLoad={() => { setLoading(false); showControls(); }}
         onError={() => { setLoading(false); setError(true); }}
-        onBuffer={({ isBuffering }) => setLoading(isBuffering)}
+        onBuffer={({ isBuffering }: { isBuffering: boolean }) => setLoading(isBuffering)}
+        controls={false}
       />
 
       {loading && (
@@ -46,22 +45,22 @@ export default function HLSPlayer({ url, isFullscreen, onToggleFullscreen }: Pro
         </View>
       )}
 
-      <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1}
-        onPress={() => { if (controls) setControls(false); else showControls(); }}>
+      <TouchableOpacity
+        style={StyleSheet.absoluteFill}
+        activeOpacity={1}
+        onPress={() => { if (controls) setControls(false); else showControls(); }}
+      >
         {controls && !loading && !error && (
           <View style={s.controls}>
-            {/* LIVE badge */}
             <View style={s.topLeft}>
               <View style={s.liveBadge}>
                 <View style={s.liveDot} />
                 <Text style={s.liveText}>LIVE</Text>
               </View>
             </View>
-            {/* Play/Pause */}
             <TouchableOpacity style={s.playBtn} onPress={() => setPaused(v => !v)}>
               <Text style={s.playIcon}>{paused ? '▶' : '⏸'}</Text>
             </TouchableOpacity>
-            {/* Fullscreen */}
             <TouchableOpacity style={s.fsBtn} onPress={onToggleFullscreen}>
               <Text style={s.fsIcon}>{isFullscreen ? '⊡' : '⛶'}</Text>
             </TouchableOpacity>
@@ -84,7 +83,8 @@ const s = StyleSheet.create({
   topLeft: { position: 'absolute', top: 10, left: 10 },
   liveBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 4, paddingHorizontal: 8, paddingVertical: 4,
+    backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 4,
+    paddingHorizontal: 8, paddingVertical: 4,
   },
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#eb0400' },
   liveText: { color: '#fff', fontSize: 10, fontWeight: '800' },
