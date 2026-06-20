@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+// @ts-ignore
 import Video from 'react-native-video';
 
 interface Props {
@@ -13,7 +14,7 @@ export default function HLSPlayer({ url, isFullscreen, onToggleFullscreen }: Pro
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [controls, setControls] = useState(true);
-  const timer = React.useRef<any>(null);
+  const timer = useRef<any>(null);
 
   const showControls = () => {
     setControls(true);
@@ -30,8 +31,7 @@ export default function HLSPlayer({ url, isFullscreen, onToggleFullscreen }: Pro
         resizeMode="contain"
         onLoad={() => { setLoading(false); showControls(); }}
         onError={() => { setLoading(false); setError(true); }}
-        onBuffer={({ isBuffering }: { isBuffering: boolean }) => setLoading(isBuffering)}
-        controls={false}
+        onBuffer={({ isBuffering }: any) => setLoading(isBuffering)}
       />
 
       {loading && (
