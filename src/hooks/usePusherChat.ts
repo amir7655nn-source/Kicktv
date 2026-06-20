@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import Pusher from 'pusher-js';
+import Pusher from 'pusher-js/react-native';
 
 export interface ChatMessage {
   id: string;
