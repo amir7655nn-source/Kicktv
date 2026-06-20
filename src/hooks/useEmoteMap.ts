@@ -28,14 +28,27 @@ async function fetch7TVGlobal(): Promise<EmoteMap> {
   return map;
 }
 
-async function fetch7TVChannel(userId: number): Promise<EmoteMap> {
-  const c = await getCached(`7tv_ch_${userId}`);
+async function fetch7TVBySlug(slug: string): Promise<EmoteMap> {
+  const c = await getCached(`7tv_slug_${slug}`);
+  if (c) return c;
+  try {
+    // روش اول: مستقیم با slug
+    const { data } = await axios.get(`https://7tv.io/v3/users/kick/${slug}`);
+    const map: EmoteMap = {};
+    for (const e of data?.emote_set?.emotes ?? []) map[e.name] = CDN(e.id);
+    await saveCache(`7tv_slug_${slug}`, map);
+    return map;
+  } catch { return {}; }
+}
+
+async function fetch7TVByUserId(userId: number): Promise<EmoteMap> {
+  const c = await getCached(`7tv_uid_${userId}`);
   if (c) return c;
   try {
     const { data } = await axios.get(`https://7tv.io/v3/users/kick/${userId}`);
     const map: EmoteMap = {};
     for (const e of data?.emote_set?.emotes ?? []) map[e.name] = CDN(e.id);
-    await saveCache(`7tv_ch_${userId}`, map);
+    await saveCache(`7tv_uid_${userId}`, map);
     return map;
   } catch { return {}; }
 }
@@ -61,13 +74,22 @@ export function useEmoteMap(userId?: number, slug?: string) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!userId || !slug) { setLoading(false); return; }
+    if (!slug) { setLoading(false); return; }
     let cancelled = false;
     (async () => {
       setLoading(true);
       try {
-        const [g, ch, k] = await Promise.all([fetch7TVGlobal(), fetch7TVChannel(userId), fetchKickEmotes(slug)]);
-        if (!cancelled) setEmoteMap({ ...k, ...g, ...ch });
+        const promises: Promise<EmoteMap>[] = [
+          fetch7TVGlobal(),
+          fetch7TVBySlug(slug),
+          fetchKickEmotes(slug),
+        ];
+        if (userId) promises.push(fetch7TVByUserId(userId));
+        const results = await Promise.all(promises);
+        if (!cancelled) {
+          const merged = Object.assign({}, ...results);
+          setEmoteMap(merged);
+        }
       } finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };
