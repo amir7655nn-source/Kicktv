@@ -14,49 +14,63 @@ export default function StreamScreen() {
   const map = {};
   try {
     const g = await fetch('https://7tv.io/v3/emote-sets/global').then(r=>r.json());
-    for (const e of g?.emotes??[]) map[e.name]='https://cdn.7tv.app/emote/'+e.id+'/1x.avif';
-  } catch(e){}
+    for (const e of (g.emotes||[])) map[e.name]='https://cdn.7tv.app/emote/'+e.id+'/1x.avif';
+  } catch(e){ console.log('global fail',e); }
   try {
     const c = await fetch('https://7tv.io/v3/users/kick/${slug}').then(r=>r.json());
-    for (const e of c?.emote_set?.emotes??[]) map[e.name]='https://cdn.7tv.app/emote/'+e.id+'/1x.avif';
-  } catch(e){}
+    for (const e of (c?.emote_set?.emotes||[])) map[e.name]='https://cdn.7tv.app/emote/'+e.id+'/1x.avif';
+  } catch(e){ console.log('channel fail',e); }
+  
+  console.log('7TV map size:', Object.keys(map).length);
 
   function process(node) {
-    if (!node || node._7) return;
-    node._7 = 1;
-    const tw = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
-    const ns = []; let n;
-    while(n=tw.nextNode()) ns.push(n);
-    for (const t of ns) {
-      if (!t.parentNode || t.parentNode._7) continue;
-      const ws = t.textContent.split(' ');
-      if (!ws.some(w=>map[w])) continue;
-      const s = document.createElement('span');
-      s._7 = 1;
-      ws.forEach((w,i) => {
-        if (i>0) s.appendChild(document.createTextNode(' '));
-        if (map[w]) {
+    if (!node || node._7tv) return;
+    node._7tv = true;
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null, false);
+    const nodes = [];
+    let n;
+    while(n = walker.nextNode()) nodes.push(n);
+    
+    for (const t of nodes) {
+      if (!t.parentNode || t.parentNode._7tv) continue;
+      const words = t.textContent.split(' ');
+      if (!words.some(w => map[w])) continue;
+      
+      const span = document.createElement('span');
+      span._7tv = true;
+      
+      for (let i = 0; i < words.length; i++) {
+        if (i > 0) span.appendChild(document.createTextNode(' '));
+        if (map[words[i]]) {
           const img = document.createElement('img');
-          img.src = map[w];
-          img.style.cssText = 'width:20px;height:20px;vertical-align:middle;';
-          img.title = w;
-          s.appendChild(img);
+          img.src = map[words[i]];
+          img.style.width = '22px';
+          img.style.height = '22px';
+          img.style.verticalAlign = 'middle';
+          img.style.display = 'inline';
+          img.title = words[i];
+          span.appendChild(img);
         } else {
-          s.appendChild(document.createTextNode(w));
+          span.appendChild(document.createTextNode(words[i]));
         }
-      });
-      t.parentNode.replaceChild(s, t);
+      }
+      t.parentNode.replaceChild(span, t);
     }
   }
 
+  // watch new messages
   new MutationObserver(ms => {
-    for (const m of ms)
-      for (const n of m.addedNodes)
-        if (n.nodeType===1) process(n);
-  }).observe(document.body, {childList:true, subtree:true});
+    for (const m of ms) {
+      for (const n of m.addedNodes) {
+        if (n.nodeType === 1) process(n);
+      }
+    }
+  }).observe(document.body, { childList: true, subtree: true });
 
   // process existing
-  document.body.querySelectorAll('*').forEach(process);
+  document.body.querySelectorAll('p, span, div').forEach(el => process(el));
+  
+  console.log('7TV injection complete');
 })();
 true;
   `;
@@ -75,7 +89,7 @@ true;
         style={s.w}
         onLoadEnd={() => {
           setLoading(false);
-          setTimeout(() => { webviewRef.current?.injectJavaScript(`alert("inject works!");true;`); }, 3000);
+          setTimeout(() => webviewRef.current?.injectJavaScript(inject), 4000);
         }}
         javaScriptEnabled
         domStorageEnabled
@@ -93,4 +107,3 @@ const s = StyleSheet.create({
   o:{...StyleSheet.absoluteFillObject,backgroundColor:'#0e0e0e',alignItems:'center',justifyContent:'center',gap:12,zIndex:10},
   t:{color:'#5a5a6e',fontSize:14},
 });
-// debug
