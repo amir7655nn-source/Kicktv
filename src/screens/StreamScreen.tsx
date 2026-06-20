@@ -1,169 +1,134 @@
-import React, { useEffect, useState } from 'react';
-import {
-  View, Text, StyleSheet, TouchableOpacity, ActivityIndicator,
-} from 'react-native';
+import React, { useRef, useState, useEffect } from 'react';
+import { View, StyleSheet, ActivityIndicator, Text } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import { KickChannel } from '../api/kickApi';
-import ChatView from '../components/ChatView';
-import { useEmoteMap } from '../hooks/useEmoteMap';
-import { usePusherChat } from '../hooks/usePusherChat';
 import { WebView } from 'react-native-webview';
 
 export default function StreamScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation();
-  const channel: KickChannel = route.params?.channel;
-  const [chatTab, setChatTab] = useState<'chat' | 'info'>('chat');
+  const channel = route.params?.channel;
+  const slug = channel?.slug ?? route.params?.slug ?? '';
+  const [loading, setLoading] = useState(true);
+  const webviewRef = useRef<any>(null);
 
-  const { emoteMap, loading: emotesLoading } = useEmoteMap(
-    channel?.user?.id,
-    channel?.slug,
-  );
-  const { messages } = usePusherChat(channel?.chatroom?.id);
-  const hlsUrl = channel?.playback_url ?? channel?.livestream?.playback_url ?? null;
+  // اسکریپت inject برای 7TV
+  const inject7TV = `
+  (async function() {
+    // صبر میکنیم چت لود بشه
+    function waitForChat() {
+      return new Promise(resolve => {
+        const check = setInterval(() => {
+          const chatContainer = document.querySelector('[data-testid="chat-container"]') 
+            || document.querySelector('.chat-container')
+            || document.querySelector('[class*="chat"]');
+          if (chatContainer) { clearInterval(check); resolve(chatContainer); }
+        }, 1000);
+      });
+    }
 
-  const playerHtml = hlsUrl ? `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta name="viewport" content="width=device-width, initial-scale=1">
-      <style>* { margin:0; padding:0; background:#000; } video { width:100vw; height:100vh; object-fit:contain; }</style>
-      <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-    </head>
-    <body>
-      <video id="v" autoplay playsinline controls></video>
-      <script>
-        var v = document.getElementById('v');
-        if (Hls.isSupported()) {
-          var hls = new Hls();
-          hls.loadSource('${hlsUrl}');
-          hls.attachMedia(v);
-        } else { v.src = '${hlsUrl}'; }
-      </script>
-    </body>
-    </html>
-  ` : null;
+    // لود ایموت‌های 7TV
+    async function load7TVEmotes() {
+      const emoteMap = {};
+      try {
+        // global emotes
+        const global = await fetch('https://7tv.io/v3/emote-sets/global').then(r => r.json());
+        for (const e of global?.emotes ?? []) {
+          emoteMap[e.name] = 'https://cdn.7tv.app/emote/' + e.id + '/1x.webp';
+        }
+        // channel emotes
+        const channel = await fetch('https://7tv.io/v3/users/kick/${slug}').then(r => r.json());
+        for (const e of channel?.emote_set?.emotes ?? []) {
+          emoteMap[e.name] = 'https://cdn.7tv.app/emote/' + e.id + '/1x.webp';
+        }
+      } catch(e) {}
+      return emoteMap;
+    }
 
-  if (!channel) {
-    return (
-      <View style={s.center}>
-        <Text style={s.errorText}>Channel not found</Text>
-      </View>
-    );
-  }
+    // replace متن ایموت با عکس
+    function replaceEmotes(element, emoteMap) {
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+      const nodes = [];
+      while (walker.nextNode()) nodes.push(walker.currentNode);
+      
+      for (const node of nodes) {
+        const words = node.textContent.split(' ');
+        let changed = false;
+        const span = document.createElement('span');
+        
+        for (const word of words) {
+          if (emoteMap[word]) {
+            const img = document.createElement('img');
+            img.src = emoteMap[word];
+            img.style.cssText = 'width:24px;height:24px;vertical-align:middle;margin:0 2px;';
+            img.title = word;
+            span.appendChild(img);
+            changed = true;
+          } else {
+            span.appendChild(document.createTextNode(word + ' '));
+          }
+        }
+        
+        if (changed && node.parentNode) {
+          node.parentNode.replaceChild(span, node);
+        }
+      }
+    }
+
+    const emoteMap = await load7TVEmotes();
+    
+    // watch برای پیام‌های جدید
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node.nodeType === 1) replaceEmotes(node, emoteMap);
+        }
+      }
+    });
+
+    const chat = await waitForChat();
+    observer.observe(chat, { childList: true, subtree: true });
+    
+    console.log('7TV loaded:', Object.keys(emoteMap).length, 'emotes');
+  })();
+  true;
+  `;
 
   return (
     <View style={s.container}>
-      {/* Player */}
-      <View style={s.playerWrap}>
-        {playerHtml ? (
-          <WebView
-            source={{ html: playerHtml }}
-            style={s.webview}
-            allowsInlineMediaPlayback
-            mediaPlaybackRequiresUserAction={false}
-            javaScriptEnabled
-          />
-        ) : (
-          <View style={s.offlineBg}>
-            <Text style={s.offlineText}>Stream is offline</Text>
-          </View>
-        )}
-        <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
-          <Text style={s.backText}>‹</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Channel strip */}
-      <View style={s.strip}>
-        <View style={s.stripAvatar}>
-          <Text style={s.stripAvatarText}>
-            {(channel?.user?.username ?? channel?.slug ?? 'K')[0].toUpperCase()}
-          </Text>
-        </View>
-        <View style={s.stripInfo}>
-          <Text style={s.stripName}>{channel?.user?.username ?? channel?.slug}</Text>
-          <Text style={s.stripGame}>{channel?.livestream?.session_title ?? 'Live'}</Text>
-        </View>
-        <TouchableOpacity style={s.followBtn}>
-          <Text style={s.followText}>Follow</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Tabs */}
-      <View style={s.tabs}>
-        {(['chat', 'info'] as const).map(t => (
-          <TouchableOpacity key={t} style={s.tab} onPress={() => setChatTab(t)}>
-            <Text style={[s.tabText, chatTab === t && s.tabActive]}>
-              {t === 'chat' ? 'Chat' : 'Info'}
-            </Text>
-            {chatTab === t && <View style={s.tabUnderline} />}
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {chatTab === 'chat' && (
-        emotesLoading ? (
-          <View style={s.center}>
-            <ActivityIndicator color="#53fc18" />
-            <Text style={s.loadingText}>Loading emotes...</Text>
-          </View>
-        ) : (
-          <ChatView messages={messages} emoteMap={emoteMap} />
-        )
-      )}
-
-      {chatTab === 'info' && (
-        <View style={s.infoTab}>
-          <Text style={s.infoTitle}>About {channel?.user?.username ?? channel?.slug}</Text>
-          <Text style={s.infoBody}>Welcome to the channel!</Text>
+      {loading && (
+        <View style={s.loadingOverlay}>
+          <ActivityIndicator color="#53fc18" size="large" />
+          <Text style={s.loadingText}>Loading stream...</Text>
         </View>
       )}
+      <WebView
+        ref={webviewRef}
+        source={{ uri: `https://kick.com/${slug}` }}
+        style={s.webview}
+        onLoadEnd={() => {
+          setLoading(false);
+          webviewRef.current?.injectJavaScript(inject7TV);
+        }}
+        javaScriptEnabled
+        domStorageEnabled
+        allowsInlineMediaPlayback
+        mediaPlaybackRequiresUserAction={false}
+        userAgent="Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+      />
     </View>
   );
 }
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0e0e0e' },
-  playerWrap: { width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000' },
   webview: { flex: 1 },
-  offlineBg: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#111' },
-  offlineText: { color: '#5a5a6e', fontSize: 14 },
-  backBtn: {
-    position: 'absolute', top: 10, left: 10,
-    backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 20,
-    width: 36, height: 36, alignItems: 'center', justifyContent: 'center',
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#0e0e0e',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    zIndex: 10,
   },
-  backText: { color: '#fff', fontSize: 22, lineHeight: 28 },
-  strip: {
-    flexDirection: 'row', alignItems: 'center',
-    padding: 12, gap: 10, borderBottomWidth: 1, borderBottomColor: '#1a1a1a',
-  },
-  stripAvatar: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: '#53fc18', alignItems: 'center', justifyContent: 'center',
-  },
-  stripAvatarText: { color: '#0e0e0e', fontWeight: '800', fontSize: 18 },
-  stripInfo: { flex: 1 },
-  stripName: { color: '#efeff1', fontWeight: '700', fontSize: 14 },
-  stripGame: { color: '#adadb8', fontSize: 12 },
-  followBtn: {
-    backgroundColor: '#53fc18', borderRadius: 6,
-    paddingHorizontal: 16, paddingVertical: 7,
-  },
-  followText: { color: '#0e0e0e', fontWeight: '800', fontSize: 13 },
-  tabs: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#1a1a1a' },
-  tab: { flex: 1, alignItems: 'center', paddingVertical: 10, position: 'relative' },
-  tabText: { color: '#adadb8', fontSize: 13 },
-  tabActive: { color: '#53fc18', fontWeight: '700' },
-  tabUnderline: {
-    position: 'absolute', bottom: 0, left: '25%', right: '25%',
-    height: 2, backgroundColor: '#53fc18', borderRadius: 1,
-  },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  loadingText: { color: '#5a5a6e', fontSize: 12 },
-  errorText: { color: '#5a5a6e', fontSize: 15 },
-  infoTab: { padding: 16, gap: 8 },
-  infoTitle: { color: '#efeff1', fontWeight: '700', fontSize: 15 },
-  infoBody: { color: '#adadb8', fontSize: 13, lineHeight: 20 },
+  loadingText: { color: '#5a5a6e', fontSize: 14 },
 });
